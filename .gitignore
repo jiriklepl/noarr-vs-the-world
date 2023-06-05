@@ -1,0 +1,8 @@
+build/
+temp/
+
+*.out
+*.o
+
+/.vscode
+.clangd
