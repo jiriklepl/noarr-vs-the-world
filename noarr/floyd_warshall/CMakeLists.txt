@@ -1,0 +1,30 @@
+cmake_minimum_required(VERSION 3.10)
+Include(FetchContent)
+
+# set the project name
+project(FloydWarshall VERSION 0.0.1)
+
+# specify the C++ standard
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED True)
+
+# download testing library Catch2
+FetchContent_Declare(
+  Noarr
+  GIT_REPOSITORY https://github.com/jiriklepl/noarr-structures.git
+  GIT_TAG        main)
+FetchContent_MakeAvailable(Noarr)
+
+# setup the test runner executable
+file(GLOB_RECURSE tests_source_files CONFIGURE_DEPENDS "src/*.cpp" )
+
+add_executable(floyd_warshall ${tests_source_files})
+target_include_directories(floyd_warshall PRIVATE include)
+target_include_directories(floyd_warshall PRIVATE ${Noarr_SOURCE_DIR}/include)
+
+# ask the compiler to print maximum warnings
+if(MSVC)
+  target_compile_options(floyd_warshall PRIVATE /W4)
+else()
+  target_compile_options(floyd_warshall PRIVATE -Wall -Wextra -pedantic)
+endif()
