@@ -1,5 +1,4 @@
 cmake_minimum_required(VERSION 3.10)
-Include(FetchContent)
 
 # set the project name
 project(FloydWarshall VERSION 0.0.1)
