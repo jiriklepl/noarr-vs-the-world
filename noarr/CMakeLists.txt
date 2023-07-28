@@ -1,20 +1,25 @@
 cmake_minimum_required(VERSION 3.10)
+Include(FetchContent)
 
-project(NoarrExamples)
+project(NoarrExamples
+  VERSION 0.0.1
+  DESCRIPTION "Examples for Noarr usage"
+  LANGUAGES CXX
+)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
+FetchContent_Declare(
+  Noarr
+  GIT_REPOSITORY https://github.com/jiriklepl/noarr-structures.git
+  GIT_TAG        main)
+FetchContent_MakeAvailable(Noarr)
 
-file(GLOB example_dirs RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} *)
+include_directories(${Noarr_SOURCE_DIR}/include)
+include_directories(include)
 
-foreach(example_dir ${example_dirs})
-    if (IS_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/${example_dir}
-        AND NOT ${example_dir} STREQUAL "build"
-        AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${example_dir}/CMakeLists.txt)
-        message(STATUS "Adding example ${example_dir}")
-        add_subdirectory(${example_dir})
-    else()
-        list(REMOVE_ITEM example_dirs ${example_dir})
-    endif()
-endforeach()
+add_executable(noarr-2d-jacobi 2d-jacobi/main.cpp)
+add_executable(noarr-floyd-warshall floyd-warshall/main.cpp)
+add_executable(noarr-gemm gemm/main.cpp)
+add_executable(noarr-gram-schmidt gram-schmidt/main.cpp)
