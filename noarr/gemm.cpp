@@ -1,7 +1,6 @@
 #include <chrono>
+#include <iomanip>
 #include <iostream>
-#include <random>
-#include <utility>
 
 #include <noarr/structures_extended.hpp>
 #include <noarr/structures/interop/bag.hpp>
@@ -57,16 +56,11 @@ auto run_test(num_t alpha, num_t beta, auto C, auto A, auto B) {
 } // namespace
 
 int main() {
-	auto size = noarr::lit<2000>;
-
 	// problem size
-	std::size_t ni = NI;
-	std::size_t nj = NJ;
-	std::size_t nk = NK;
+	std::size_t ni = NI, nj = NJ, nk = NK;
 
 	// input data
-	num_t alpha;
-	num_t beta;
+	num_t alpha, beta;
 
 	auto C = noarr::make_bag(noarr::scalar<num_t>() ^ noarr::sized_vectors<'i', 'j'>(ni, nj));
 	auto A = noarr::make_bag(noarr::scalar<num_t>() ^ noarr::sized_vectors<'i', 'k'>(ni, nk));
@@ -79,7 +73,8 @@ int main() {
 
 	auto [out, dur] = run_test(alpha, beta, C.get_ref(), A.get_ref(), B.get_ref());
 
-	noarr::serialize_data(std::cout, out);
+	std::cout << std::fixed << std::setprecision(2);
+	noarr::serialize_data(std::cout, out ^ noarr::hoist<'i'>());
 
 	std::cerr << "time: " << dur << std::endl;
 }

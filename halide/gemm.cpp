@@ -1,44 +1,65 @@
 #include <chrono>
+#include <iomanip>
 #include <iostream>
-#include <random>
-#include <utility>
 
 #include <halide14/Halide.h>
+
+#include "defines.hpp"
+#include "gemm.hpp"
+
+using num_t = DATA_TYPE;
 
 using namespace Halide;
 
 int main() {
-	int size = 2000;
-	Var x, y;
+	// problem size
+	int ni = NI, nj = NJ, nk = NK;
 
-	Func a, b, c;
+	Halide::Var x, y;
+	Halide::Expr alpha = Halide::Expr(1.5), beta = Halide::Expr(1.2);
+	Halide::Func c, a, b, in_c, in_a, in_b;
 
-	a(x, y) = x - y;
-	b(x, y) = x * y;
-	c(x, y) = 0.f;
+	Halide::Buffer<num_t> C({ni, nj}, "C");
+	Halide::Buffer<num_t> B({nk, nj}, "B");
+	Halide::Buffer<num_t> A({ni, nk}, "A");
 
-	RDom r(0, size);
+	in_c(x, y) = Halide::cast(Halide::type_of<num_t>(), (x * y + 1) % ni) / ni;
+	in_a(x, y) = Halide::cast(Halide::type_of<num_t>(), x * (y + 1) % nk) / nk;
+	in_b(x, y) = Halide::cast(Halide::type_of<num_t>(), x * (y + 2) % nj) / nj;
 
-	c(x, y) += a(x, r) * b(r, y);
+	in_c.realize(C);
+	in_a.realize(A);
+	in_b.realize(B);
 
-	Buffer<float> buffer{size, size};
+	c(x, y) = C(x, y);
+	a(x, y) = A(x, y);
+	b(x, y) = B(x, y);
 
-	c.realize(buffer);
-	c.realize(buffer);
-	c.realize(buffer);
+	Halide::RDom r(0, nk - 1);
+
+	c(x, y) *= beta;
+	c(x, y) += alpha * a(x, r) * b(r, y);
+
+	c.realize(C);
+	c.realize(C);
+	c.realize(C);
+
+	in_c.realize(C);
+	in_a.realize(A);
+	in_b.realize(B);
 
 	auto start = std::chrono::high_resolution_clock::now();
 
-	c.realize(buffer);
+	c.realize(C);
 
 	auto end = std::chrono::high_resolution_clock::now();
 
-
 	auto dur = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 
-	for (int y = 0; y < buffer.width(); y++) {
-		for (int x = 0; x < buffer.height(); x++) {
-			std::cout << buffer(x, y) << std::endl;
+	std::cout << std::fixed << std::setprecision(2);
+	for (int x = 0; x < ni; x++) {
+		for (int y = 0; y < nj; y++) {
+			std::cout << C(x, y) << std::endl;
 		}
 	}
 
