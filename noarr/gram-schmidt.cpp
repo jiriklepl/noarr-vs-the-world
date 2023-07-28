@@ -1,98 +1,116 @@
 #include <chrono>
+#include <iomanip>
 #include <iostream>
-#include <random>
-#include <utility>
+#include <cmath>
 
-#include "noarr/structures_extended.hpp"
-#include "noarr/structures/interop/bag.hpp"
-#include "noarr/structures/extra/traverser.hpp"
-#include "noarr/structures/interop/serialize_data.hpp"
+#include <noarr/structures_extended.hpp>
+#include <noarr/structures/interop/bag.hpp>
+#include <noarr/structures/extra/traverser.hpp>
+#include <noarr/structures/interop/serialize_data.hpp>
 
-template<class V, class U>
-float inner_product(V v, U u) {
-	float result = 0;
+#include "defines.hpp"
+#include "gramschmidt.hpp"
 
-	noarr::traverser(u, v).for_each([&result, u, v](auto state) {
-		result += u[state] * v[state];
-	});
+using num_t = DATA_TYPE;
 
-	return result;
+namespace {
+
+// initialization function
+void init_array(auto A, auto R, auto Q) {
+	// A: i x k
+	// R: k x j
+	// Q: i x k
+
+	auto ni = A | noarr::get_length<'i'>();
+
+	noarr::traverser(A, Q) | [=](auto state) {
+		auto i = noarr::get_index<'i'>(state);
+		auto k = noarr::get_index<'k'>(state);
+
+		A[state] = (((num_t)((i * k) % ni) / ni) * 100) + 10;
+		Q[state] = 0.0;
+	};
+
+	noarr::traverser(R) | [=](auto state) {
+		R[state] = 0.0;
+	};
 }
 
-template<class V>
-auto run_test(V v) {
-	//std::random_device rd;
-	std::mt19937 gen(42);
-	std::uniform_real_distribution<> dis(0.f, 1.f);
+// computation kernel
+void kernel_gramschmidt(auto A, auto R, auto Q) {
+	// A: i x k
+	// R: k x j
+	// Q: i x k
+
+	auto A_ij = A ^ noarr::rename<'k', 'j'>();
+
+	noarr::traverser(A_ij, R, Q)
+		.template for_dims<'k'>([=](auto inner) {
+			auto state = inner.state();
+			num_t norm = 0;
+
+			inner.template for_each<'i'>([=, &norm](auto state) {
+				norm += A[state] * A[state];
+			});
+
+			auto R_diag = R ^ noarr::fix<'j'>(noarr::get_index<'k'>(state));
+
+			R_diag[state] = std::sqrt(norm);
+
+			inner.template for_each<'i'>([=](auto state) {
+				Q[state] = A[state] / R_diag[state];
+			});
+
+			inner
+				.order(noarr::shift<'j'>(noarr::get_index<'k'>(state) + 1))
+				.template for_dims<'j'>([=](auto inner) {
+					auto state = inner.state();
+
+					R[state] = 0;
+
+					inner.template for_each<'i'>([=](auto state) {
+						R[state] = R[state] + Q[state] * A_ij[state];
+					});
+
+					inner.template for_each<'i'>([=](auto state) {
+						A_ij[state] = A_ij[state] - Q[state] * R[state];
+					});
+				});
+		});
+}
+
+} // namespace
+
+int main() {
+	// problem size
+	std::size_t ni = NI;
+	std::size_t nj = NJ;
+
+	// data
+	auto A = noarr::make_bag(noarr::scalar<num_t>() ^ noarr::sized_vectors<'i', 'k'>(ni, nj));
+	auto R = noarr::make_bag(noarr::scalar<num_t>() ^ noarr::sized_vectors<'k', 'j'>(nj, nj));
+	auto Q = noarr::make_bag(noarr::scalar<num_t>() ^ noarr::sized_vectors<'i', 'k'>(ni, nj));
+
+	// warmup
+	kernel_gramschmidt(A.get_ref(), R.get_ref(), Q.get_ref());
+	kernel_gramschmidt(A.get_ref(), R.get_ref(), Q.get_ref());
+	kernel_gramschmidt(A.get_ref(), R.get_ref(), Q.get_ref());
+
+	// initialize data
+	init_array(A.get_ref(), R.get_ref(), Q.get_ref());
 
 	auto start = std::chrono::high_resolution_clock::now();
 
-	auto traverser = noarr::traverser(v);
-
-	traverser.for_each([&, v](auto state){ v[state] = dis(gen); });
-
-	traverser.template for_each<'c'>([=](auto state) {
-		auto base_vector = v ^ noarr::fix(state);
-		float den = inner_product(base_vector, base_vector);
-
-		traverser
-			.order(noarr::shift<'c'>(noarr::get_index<'c'>(state) + 1))
-			.template for_each<'c'>([=](auto other_state) {
-				auto vector = v ^ noarr::fix(other_state);
-				float num = inner_product(vector, base_vector);
-
-				noarr::traverser(vector).for_each([vector, base_vector, alpha = num / den](auto state) {
-					vector[state] -= alpha * base_vector[state];
-				});
-			});
-
-		noarr::traverser(base_vector).for_each([base_vector, norm = std::sqrt(den)](auto state) {
-			base_vector[state] /= norm;
-		});
-	});
+	// run kernel
+	kernel_gramschmidt(A.get_ref(), R.get_ref(), Q.get_ref());
 
 	auto end = std::chrono::high_resolution_clock::now();
 
-	auto dur = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+	auto dur = std::chrono::duration<long double>(end - start);
 
-	return dur;
-}
-
-template<class V>
-auto test_test(V v) {
-	auto traverser = noarr::traverser(v);
-
-	traverser.template for_each<'c'>([=](auto state) {
-		traverser
-			.order(noarr::slice<'c'>(0, noarr::get_index<'c'>(state)))
-			.template for_each<'c'>([=](auto other_state) {
-				auto vector = v ^ noarr::fix(state);
-				auto base_vector = v ^ noarr::fix(other_state);
-
-				float should_be_zero = inner_product(vector, base_vector);
-				float should_be_one = inner_product(vector, vector);
-
-				std::cerr << should_be_zero << ' ' << should_be_one << std::endl;
-			});
-	});
-}
-
-int main() {
-	auto dim = noarr::lit<500>;
-	auto count = noarr::lit<500>;
-
-	auto layout = noarr::scalar<float>() ^ noarr::sized_vectors<'c', 'd'>(count, dim);
-
-	auto v = noarr::make_bag(layout);
-
-	// warm-up
-	run_test(v.get_ref());
-	run_test(v.get_ref());
-	run_test(v.get_ref());
-
-	auto dur = run_test(v.get_ref());
-
-	noarr::serialize_data(std::cout, v);
+	std::cout << std::fixed << std::setprecision(2);
+	// noarr::serialize_data(std::cout, R.get_ref() ^ noarr::hoist<'k'>());
+	noarr::serialize_data(std::cout, Q.get_ref() ^ noarr::hoist<'i'>());
 
 	std::cerr << "time: " << dur << std::endl;
 }
