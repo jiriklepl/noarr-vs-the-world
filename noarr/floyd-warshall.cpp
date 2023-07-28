@@ -1,48 +1,76 @@
+#include <algorithm>
 #include <chrono>
+#include <iomanip>
 #include <iostream>
-#include <utility>
 
-#include "noarr/structures_extended.hpp"
-#include "noarr/structures/interop/bag.hpp"
-#include "noarr/structures/extra/traverser.hpp"
-#include "noarr/structures/interop/serialize_data.hpp"
+#include <noarr/structures_extended.hpp>
+#include <noarr/structures/interop/bag.hpp>
+#include <noarr/structures/extra/traverser.hpp>
+#include <noarr/structures/interop/serialize_data.hpp>
 
-template<class Dist>
-auto run_test(Dist dist) {
+#include "defines.hpp"
+#include "floyd-warshall.hpp"
+
+using num_t = DATA_TYPE;
+
+namespace {
+
+// initialization function
+void init_array(auto path) {
+	// path: i x j
+
+	noarr::traverser(path) | [=](auto state) {
+		auto [i, j] = noarr::get_indices<'i', 'j'>(state);
+
+		path[state] = i * j % 7 + 1;
+
+		if ((i + j) % 13 == 0 || (i + j) % 7 == 0 || (i + j) % 11 == 0)
+			path[state] = 999;
+	};
+}
+
+
+// computation kernel
+void kernel_floyd_warshall(auto path) {
+	// path: i x j
+	auto path_start_k = path ^ noarr::rename<'i', 'k'>();
+	auto path_end_k = path ^ noarr::rename<'j', 'k'>();
+
+	noarr::traverser(path, path_start_k, path_end_k)
+		.template for_dims<'k'>([=](auto inner) {
+			inner | [=](auto state) {
+				path[state] = std::min(path_start_k[state] + path_end_k[state], path[state]);
+			};
+		});
+}
+
+} // namespace
+
+int main() {
+	// problem size
+	std::size_t n = N;
+
+	// problem data
+	auto path = noarr::make_bag(noarr::scalar<float>() ^ noarr::sized_vectors<'i', 'j'>(n, n));
+
+	// warm-up
+	kernel_floyd_warshall(path.get_ref());
+	kernel_floyd_warshall(path.get_ref());
+	kernel_floyd_warshall(path.get_ref());
+
+	// initialization
+	init_array(path.get_ref());
+
 	auto start = std::chrono::high_resolution_clock::now();
 
-	noarr::traverser(dist).for_each([dist](auto state){ dist[state] = 2 * noarr::get_index<'i'>(state) + noarr::get_index<'j'>(state); });
-	noarr::traverser(dist).template for_each<'i'>([&, dist](auto state){ dist[state & noarr::idx<'j'>(noarr::get_index<'i'>(state))] = 0.f; });
-
-	auto to = dist ^ noarr::rename<'j', 'k'>();
-	auto from = dist ^ noarr::rename<'i', 'k'>();
-
-	noarr::traverser(dist, to, from).for_each([=](auto state) {
-		dist[state] = std::min(dist[state], to[state] + from[state]);
-	});
+	kernel_floyd_warshall(path.get_ref());
 
 	auto end = std::chrono::high_resolution_clock::now();
 
 	auto dur = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 
-	return dur;
-}
-
-int main() {
-	auto size = noarr::lit<2'000>;
-
-	auto layout = noarr::scalar<float>() ^ noarr::sized_vectors<'i', 'j'>(size, size);
-
-	auto dist = noarr::make_bag(layout);
-
-	// warm-up
-	run_test(dist.get_ref());
-	run_test(dist.get_ref());
-	run_test(dist.get_ref());
-
-	auto dur = run_test(dist.get_ref());
-
-	noarr::serialize_data(std::cout, dist);
+	std::cout << std::fixed << std::setprecision(2);
+	noarr::serialize_data(std::cout, path.get_ref() ^ noarr::hoist<'i'>());
 
 	std::cerr << "time: " << dur << std::endl;
 }

@@ -1,42 +1,54 @@
 #include <chrono>
+#include <iomanip>
 #include <iostream>
-#include <random>
-#include <utility>
 
 #include <halide14/Halide.h>
 
-using namespace Halide;
+#include "defines.hpp"
+#include "floyd-warshall.hpp"
+
+using num_t = DATA_TYPE;
 
 int main() {
-	int size = 2'000;
+	// problem size
+	int n = N;
 
-	Var x, y;
-	Func dist;
+	Halide::Var x, y;
+	Halide::Func path, in_path;
 
-	RDom r(0, size, 0, size, 0, size);
+	Halide::Buffer<num_t> buffer{n, n};
 
-	dist(x, y) = 2.f * x + y;
-	dist(x, x) = 0.f;
+	Halide::RDom r(0, n, 0, n, 0, n);
 
-	dist(r.x, r.y) = min(dist(r.x, r.y), dist(r.x, r.z) + dist(r.z, r.y));
+	// set initial values
+	in_path(x, y) = Halide::cast<num_t>(x * y % 7 + 1);
+	in_path(x, y) = Halide::select(
+		(x + y) % 13 == 0 || (x + y) % 7 == 0 || (x + y) % 11 == 0,
+		999,
+		in_path(x, y));
 
-	Buffer<float> buffer{size, size};
+	path(x, y) = buffer(x, y); // load initial values
+	path(r.x, r.y) = Halide::min(path(r.z, r.y) + path(r.x, r.z), path(r.x, r.y));
 
-	dist.realize(buffer);
-	dist.realize(buffer);
-	dist.realize(buffer);
+	// warmup
+	path.realize(buffer);
+	path.realize(buffer);
+	path.realize(buffer);
+
+	// store initial values
+	in_path.realize(buffer);
 
 	auto start = std::chrono::high_resolution_clock::now();
 
-	dist.realize(buffer);
+	path.realize(buffer);
 
 	auto end = std::chrono::high_resolution_clock::now();
 
-
 	auto dur = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 
-	for (int y = 0; y < buffer.width(); y++) {
-		for (int x = 0; x < buffer.height(); x++) {
+	std::cout << std::fixed << std::setprecision(2);
+	for (int x = 0; x < buffer.height(); x++) {
+		for (int y = 0; y < buffer.width(); y++) {
 			std::cout << buffer(x, y) << std::endl;
 		}
 	}
