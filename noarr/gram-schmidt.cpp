@@ -106,7 +106,7 @@ int main() {
 
 	auto end = std::chrono::high_resolution_clock::now();
 
-	auto dur = std::chrono::duration<long double>(end - start);
+	auto dur = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 
 	std::cout << std::fixed << std::setprecision(2);
 	// noarr::serialize_data(std::cout, R.get_ref() ^ noarr::hoist<'k'>());
